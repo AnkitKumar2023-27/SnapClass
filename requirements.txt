@@ -1,0 +1,14 @@
+#  this file use to save all the library which is mainly for install 
+#  at a time or  deployment pplatform also serch this file for deploying 
+ numpy
+ pandas
+ scikit-learn
+#  dlib                      # this is use for the face recognization   but we prefer dlib bin over the dlib library because of precompiled  code 
+dlib-bin
+git+https://github.com/ageitgey/face_recognition_models     # for the face dimention these dimanetion  or vector number called embeding it is install bye the   git hub  this is  the srs
+setuptools<70.0.0    # help in  installl  from github 
+supabase   # database
+bcrypt   # hashing method
+segno     # qr code genration
+pillow       #preprocessing of images (scale transform  size )
+streamlit
