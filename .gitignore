@@ -1,0 +1,8 @@
+.env
+.vscode
+*.pyc 
+#   temprary cash memory 
+__pycache
+venv/
+.streamlit/
+dist/   

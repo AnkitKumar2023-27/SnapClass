@@ -12,3 +12,4 @@ bcrypt   # hashing method
 segno     # qr code genration
 pillow       #preprocessing of images (scale transform  size )
 streamlit
+
