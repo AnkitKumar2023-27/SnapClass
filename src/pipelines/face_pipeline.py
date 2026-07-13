@@ -32,7 +32,9 @@ def get_face_embeddings(image_np):
     for face in faces:
         shape = sp(image_np, face)
         face_descriptor = facerec.compute_face_descriptor(image_np, shape, 1)
-        encodings.append(np.array(face_descriptor))
+        encodings.append(np.array(face_descriptor)) 
+        faces = detector(image_np, 1)
+        print("Faces detected:", len(faces))
 
     return encodings
 
@@ -74,6 +76,7 @@ def train_classifier():
 
 def predict_attendance(class_image_np):
     encodings = get_face_embeddings(class_image_np)
+    
 
     detected_student = {}
 
@@ -87,6 +90,7 @@ def predict_attendance(class_image_np):
     y_train = model_data['y']               
 
     all_students = sorted(list(set(y_train)))
+    
 
     for encoding in encodings:
         if len(all_students) >= 2:

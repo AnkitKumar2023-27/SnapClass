@@ -23,6 +23,8 @@ def create_teacher(username, password, name):
     return response.data
 
 
+
+
 def teacher_login(username, password):
     username = username.strip()
     response = supabase.table("teachers").select("*").eq("username", username).execute()
@@ -32,6 +34,34 @@ def teacher_login(username, password):
             return teacher
     return None
 
+
 def get_all_students():
-    response=supabase.table("students").select('*').execute()
+    response = supabase.table("students").select("*").execute()
     return response.data
+
+
+def create_student(name, face_embedding=None, voice_embedding=None):
+    data = {"name": name, "face_embedding": face_embedding, "voice_embedding": voice_embedding}
+    response = supabase.table("students").insert(data).execute()
+    return response.data[0]
+
+def create_subject(subject_code, name, section, teacher_id):
+    data = {"subject_code": subject_code, "name": name, "section": section, "teacher_id": teacher_id}
+    response = supabase.table("subjects").insert(data).execute()
+    return response.data
+def get_teacher_subjects(teacher_id):
+    response = supabase.table("subjects").select(
+        "*, subject_students(count), attendance_logs(*)").eq("teacher_id", teacher_id).execute()
+
+    subjects = response.data
+
+    for sub in subjects:
+        sub['total_students'] = sub.get("subject_students", [{}])[0].get('count', 0)
+        attendance = sub.get('attendance_logs', [])
+        unique_sessions = len(set(log['timestamp'][:10] for log in attendance))
+        sub['total_classes'] = unique_sessions
+        sub.pop('subject_students', None)
+        sub.pop('attendance_logs', None)
+
+    return subjects
+

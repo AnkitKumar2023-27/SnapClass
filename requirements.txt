@@ -13,3 +13,5 @@ segno     # qr code genration
 pillow       #preprocessing of images (scale transform  size )
 streamlit
 
+librosa       # file mangement
+resemblyzer   # use for the voice recognization 
