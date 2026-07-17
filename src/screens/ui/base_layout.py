@@ -77,10 +77,7 @@ def style_base_layout():
             color: white !important;
         }
 
-        # p, div, span ,.h3 ,h4{
-        #     color: white;
-        #     font-family: 'Outfit', sans-serif;
-        # }
+      
             button[kind="secondary"] {
             border-radius: 1.5rem !important;
             background: #EB4459 !important;

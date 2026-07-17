@@ -1,21 +1,27 @@
-import  streamlit as st
+import streamlit as st
 from src.components.database.db import create_subject
+
 
 @st.dialog("Create New Subject")
 def create_subject_dialog(teacher_id):
-    st.write("Enter the detail of new Subject")
-    sub_id=st.text_input("Subject Code",placeholder="CS101")
-    sub_name=st.text_input("Subject Name",placeholder="AIML")
-    sub_section=st.text_input("Section",placeholder="A" )
+    subject_code = st.text_input("Subject Code", placeholder="e.g. CS101", key="new_sub_code")
+    name = st.text_input("Subject Name", placeholder="e.g. Data Structures", key="new_sub_name")
+    section = st.text_input("Section", placeholder="e.g. A", key="new_sub_section")
 
+    st.write("")
 
-    if st.button("Create Subject now",type="primary",width="stretch"):
-        if sub_id and sub_name and sub_section:
-            try:
-                create_subject(sub_id,sub_name,sub_section,) 
-                st.toast("Subject Created  Sucessfully!")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Error:{str(e)}")
+    if st.button("Create", type="primary", width="stretch", key="create_sub_btn"):
+        if not subject_code or not name or not section:
+            st.error("All fields are required!")
         else:
-            st.warning("please Fill all Details")        
+            result = create_subject(
+                subject_code=subject_code,
+                name=name,
+                section=section,
+                teacher_id=teacher_id     
+            )
+            if result:
+                st.toast("Subject created!", icon="✅")
+                st.rerun()
+            else:
+                st.error("Failed to create subject")
