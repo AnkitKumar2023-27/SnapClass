@@ -232,53 +232,278 @@ def teacher_tab_manage_subjects():
     else:
         st.info("NO SUBJECTS FOUND. CREATE ONE ABOVE")
 
-
 def teacher_tab_attendance_records():
     st.header("Attendance Records")
     st.write("")
 
+    from src.components.email_alerts import (
+        check_and_send_alerts
+    )
+    from src.components.database.db import (
+        get_all_students_attendance_for_subject,
+        get_teacher_subjects,
+        get_attendance_for_teacher
+    )
+
     teacher_id = st.session_state.teacher_data['teacher_id']
+    subjects = get_teacher_subjects(teacher_id)
 
-    records = get_attendance_for_teacher(teacher_id)
-
-    if not records:
-        st.info("No attendance records found.")
+    if not subjects:
+        st.info("No subjects found.")
         return
 
-    data = []
+    # Subject select karo
+    subject_options = {
+        f"{s['name']} - {s['subject_code']}": s
+        for s in subjects
+    }
 
-    for r in records:
-        ts = r.get('timestamp')
-        data.append({
-            "ts_group": ts.split(".")[0] if ts else None,
-            "Time": datetime.fromisoformat(ts).strftime("%Y-%m-%d %I:%M %p") if ts else "N/A",
-            "Subject": r['subjects']['name'],
-            "Subject Code": r['subjects']['subject_code'],
-            "is_present": bool(r.get('is_present', False))
-        })
-
-    df = pd.DataFrame(data)
-
-    summary = (
-        df.groupby(['ts_group', 'Time', 'Subject', 'Subject Code'])
-        .agg(
-            Present_Count=('is_present', 'sum'),
-            Total_Count=('is_present', 'count')
-        ).reset_index()
+    selected_label = st.selectbox(
+        "Select Subject",
+        options=list(subject_options.keys())
     )
 
-    summary['Attendance Stats'] = (
-        "✅ " + summary['Present_Count'].astype(str) + " /"
-        + summary['Total_Count'].astype(str) + ' Students'
+    selected_sub = subject_options[selected_label]
+
+    st.divider()
+
+    # Attendance data lo
+    attendance_list = get_all_students_attendance_for_subject(
+        selected_sub['subject_id']
     )
 
-    display_df = (
-        summary.sort_values(by='ts_group', ascending=False)
-        [['Time', 'Subject', 'Subject Code', 'Attendance Stats']]
+    if not attendance_list:
+        st.info("No attendance data yet.")
+        return
+
+    # Table dikhao
+    import pandas as pd
+    df = pd.DataFrame(attendance_list)
+    df['Status'] = df['percentage'].apply(
+        lambda x: "✅ Safe" if x >= 75 else "⚠️ Low"
     )
 
-    st.dataframe(display_df, use_container_width=True, hide_index=True)  
+    display_df = df[[
+        'name', 'present', 'total', 
+        'percentage', 'Status'
+    ]].rename(columns={
+        'name': 'Student',
+        'present': 'Present',
+        'total': 'Total',
+        'percentage': 'Attendance %'
+    })
 
+    st.dataframe(
+        display_df, 
+        use_container_width=True, 
+        hide_index=True
+    )
+
+    # Low attendance students
+    low_students = [
+        s for s in attendance_list 
+        if s['percentage'] < 75
+    ]
+
+    st.write("")
+
+    if low_students:
+        st.warning(
+            f"⚠️ {len(low_students)} students "
+            f"below 75% attendance"
+        )
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            if st.button(
+                "📧 Send Alert Emails",
+                type="primary",
+                width="stretch"
+            ):
+                with st.spinner("Sending emails..."):
+                    sent, failed = check_and_send_alerts(
+                        subject_id=selected_sub['subject_id'],
+                        subject_name=selected_sub['name'],
+                        subject_code=selected_sub['subject_code'],
+                        attendance_list=low_students
+                    )
+
+                if sent:
+                    st.success(
+                        f"✅ Emails sent to: "
+                        f"{', '.join(sent)}"
+                    )
+                if failed:
+                    st.error(
+                        f"❌ Failed: {', '.join(failed)}"
+                    )
+
+        with col2:
+            # Excel download
+            import io
+            buffer = io.BytesIO()
+            df.to_excel(buffer, index=False)
+            st.download_button(
+                "📥 Download Excel",
+                buffer.getvalue(),
+                f"attendance_{selected_sub['subject_code']}.xlsx",
+                type="secondary",
+                width="stretch"
+            )
+    else:
+        st.success("✅ All students above 75%!")
+
+    st.header("Attendance Records")
+    st.write("")
+
+    from src.components.database.db import (
+        get_attendance_analytics,
+        get_attendance_for_teacher
+    )
+    from src.components.analytics import (
+        process_analytics_data,
+        get_chart1_data,
+        get_chart2_data,
+        get_chart3_data,
+        get_chart4_data,
+        make_bar_chart,
+        make_line_chart,
+        make_student_chart,
+        make_pie_chart
+    )
+
+    teacher_id = st.session_state.teacher_data['teacher_id']
+
+    # Data lo
+    raw_data = get_attendance_analytics(teacher_id)
+
+    if not raw_data:
+        st.info(
+            "No attendance data yet. "
+            "Take some attendance first!"
+        )
+        return
+
+    # Process karo
+    df = process_analytics_data(raw_data)
+
+    # ── Metric cards ──────────────────────────────
+    chart4 = get_chart4_data(df)
+    chart1 = get_chart1_data(df)
+
+    total_students = df['student_id'].nunique()
+    total_subjects = df['subject_id'].nunique()
+    total_classes  = df['date'].nunique()
+    overall_pct    = chart4['percentage']
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("👥 Students",    total_students)
+    m2.metric("📚 Subjects",    total_subjects)
+    m3.metric("🗓️ Classes Held", total_classes)
+    m4.metric("📊 Overall Avg", f"{overall_pct}%")
+
+    st.divider()
+
+    # ── Tab selector ──────────────────────────────
+    t1, t2, t3, t4 = st.tabs([
+        "📊 By Subject",
+        "📈 Weekly Trend",
+        "👥 By Student",
+        "🍕 Overall Split"
+    ])
+
+    with t1:
+        st.plotly_chart(
+            make_bar_chart(chart1),
+            use_container_width=True
+        )
+        # Low attendance warning
+        low = chart1[chart1['percentage'] < 75]
+        if not low.empty:
+            st.warning(
+                f"⚠️ {len(low)} subjects below 75%: "
+                f"{', '.join(low['subject_name'].tolist())}"
+            )
+
+    with t2:
+        chart2 = get_chart2_data(df)
+        if not chart2.empty:
+            st.plotly_chart(
+                make_line_chart(chart2),
+                use_container_width=True
+            )
+        else:
+            st.info("Not enough data for trend yet.")
+
+    with t3:
+        chart3 = get_chart3_data(df)
+        st.plotly_chart(
+            make_student_chart(chart3),
+            use_container_width=True
+        )
+
+        # Table bhi dikhao
+        st.dataframe(
+            chart3[[
+                'student_name', 'present',
+                'total', 'percentage', 'status'
+            ]].rename(columns={
+                'student_name': 'Student',
+                'present':      'Present',
+                'total':        'Total',
+                'percentage':   'Attendance %',
+                'status':       'Status'
+            }),
+            use_container_width=True,
+            hide_index=True
+        )
+
+    with t4:
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            st.plotly_chart(
+                make_pie_chart(chart4),
+                use_container_width=True
+            )
+        with col2:
+            st.write("")
+            st.write("")
+            st.metric(
+                "Total Records",
+                chart4['total']
+            )
+            st.metric(
+                "Present",
+                chart4['values'][0]
+            )
+            st.metric(
+                "Absent",
+                chart4['values'][1]
+            )
+
+    st.divider()
+
+    # ── Excel Download ────────────────────────────
+    import io
+    buffer = io.BytesIO()
+    df[[
+        'student_name', 'subject_name',
+        'subject_code', 'date', 'is_present'
+    ]].rename(columns={
+        'student_name': 'Student',
+        'subject_name': 'Subject',
+        'subject_code': 'Subject Code',
+        'date':         'Date',
+        'is_present':   'Present'
+    }).to_excel(buffer, index=False)
+
+    st.download_button(
+        "📥 Download Full Report (Excel)",
+        buffer.getvalue(),
+        "attendance_report.xlsx",
+        type="primary"
+    )
 
 def login_teacher(username, password):
     if not username.strip() or not password.strip():

@@ -36,7 +36,7 @@ def subject_card(name, code, section, stats=None, footer_callback=None):
     </div>
     """
 
-    components.html(html, height=220)
+    components.html(html, height=250)
 
     if footer_callback:
         footer_callback()

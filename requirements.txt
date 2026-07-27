@@ -15,3 +15,11 @@ streamlit
 
 librosa       # file mangement
 resemblyzer   # use for the voice recognization 
+openpyxl
+plotly
+mediapipe
+opencv-pythonpip 
+streamlit-webrtc
+opencv-python
+av
+cerebras-cloud-sdk

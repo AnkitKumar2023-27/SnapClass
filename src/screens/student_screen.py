@@ -2,95 +2,167 @@ import time
 import numpy as np
 import streamlit as st
 from PIL import Image
+from src.pipelines.geofence_pipeline import geofence_check_ui
+from src.components.ai_chatbot import chatbot_ui
 
 from src.components.header import header_dashboard
 from src.screens.ui.base_layout import style_base_layout, style_background_dashboard
 from src.components.footer import footer_dashboard
-from src.components.database.db import create_student, get_all_students, unenroll_student_from_subject, get_student_subjects, get_student_attendance
+from src.components.database.db import (
+    create_student,
+    get_all_students,
+    unenroll_student_from_subject,
+    get_student_subjects,
+    get_student_attendance,
+)
 from src.pipelines.face_pipeline import predict_attendance, get_face_embeddings, train_classifier
 from src.pipelines.voice_pipeline import get_voice_embedding
+from src.pipelines.liveness_pipeline import get_random_challenge, verify_liveness_from_frames
 from src.components.subject_card import subject_card
 from src.components.dialog_enroll import enroll_dialog
 
 
+def liveness_check_ui():
+    if 'current_challenge' not in st.session_state:
+        st.session_state.current_challenge = get_random_challenge()
+        st.session_state.liveness_passed   = False
+
+    challenge = st.session_state.current_challenge
+
+    st.markdown("""
+    <div style="
+        background: #E0E3FF;
+        border-radius: 16px;
+        padding: 20px;
+        text-align: center;
+        margin-bottom: 20px;
+    ">
+        <h3 style="color: #5865F2; margin: 0;">🔐 Liveness Check</h3>
+        <p style="color: #333; margin: 8px 0 0 0;">Security verification required</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.info(
+        f"**Challenge:** {challenge['text']}\n\n"
+        f"*{challenge['hint']}*\n\n"
+        f"⏱️ You have {challenge['time']} seconds"
+    )
+
+    photo = st.camera_input("Complete the challenge above", key="liveness_camera")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        verify_btn = st.button("✅ Verify Liveness", type="primary",   width="stretch", key="verify_liveness_btn")
+
+    with col2:
+        if st.button("🔄 New Challenge",             type="secondary", width="stretch", key="new_challenge_btn"):
+            st.session_state.pop('current_challenge', None)
+            st.rerun()
+
+    if verify_btn and photo:
+        img = np.array(Image.open(photo).convert("RGB"), dtype=np.uint8)
+
+        with st.spinner("Analyzing your action..."):
+            passed, confidence, message = verify_liveness_from_frames(
+                [img], challenge['id']
+            )
+
+        if passed:
+            st.success(f"✅ {message} (Confidence: {confidence}%)")
+            st.session_state.liveness_passed = True
+            st.session_state.liveness_image  = img
+            time.sleep(1)
+            st.rerun()
+        else:
+            st.error(f"❌ {message} (Confidence: {confidence}%)")
+            st.warning("💡 Tip: Make sure your face is clearly visible and well lit")
+            st.session_state.pop('current_challenge', None)
+            time.sleep(2)
+            st.rerun()
+
+
 def student_dashboard():
     student_data = st.session_state.student_data
-    student_id = student_data['student_id']
+    student_id   = student_data['student_id']
 
     c1, c2 = st.columns(2, vertical_alignment="center", gap="xxlarge")
-
     with c1:
         header_dashboard()
-
     with c2:
         st.subheader(f"Welcome, {student_data['name']}")
         if st.button("Logout", type="secondary", key="student_logout_btn"):
             del st.session_state.student_data
+            st.session_state.pop('chat_history', None)
             st.session_state.is_logged_in = False
             st.rerun()
 
     st.write("")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.header("My Subjects")
-    with col2:
-        if st.button("+ Enroll in Subject", type="primary", width="stretch"):
-            enroll_dialog()
+    tab1, tab2 = st.tabs(["📚 My Subjects", "🤖 AI Assistant"])
 
-    st.divider()
+    with tab1:
+        col1, col2 = st.columns(2)
+        with col1:
+            st.header("My Subjects")
+        with col2:
+            if st.button("+ Enroll in Subject", type="primary", width="stretch"):
+                enroll_dialog()
 
-    subjects = get_student_subjects(student_id)
-    attendance_logs = get_student_attendance(student_id)
+        st.divider()
 
-    stats_map = {}
-    for log in attendance_logs:
-        sid = log['subject_id']
-        if sid not in stats_map:
-            stats_map[sid] = {"total": 0, "attended": 0}
-        stats_map[sid]['total'] += 1
-        if log.get('is_present'):
-            stats_map[sid]['attended'] += 1
+        subjects        = get_student_subjects(student_id)
+        attendance_logs = get_student_attendance(student_id)
 
-    if subjects:
-        cols = st.columns(2)
+        stats_map = {}
+        for log in attendance_logs:
+            sid = log['subject_id']
+            if sid not in stats_map:
+                stats_map[sid] = {"total": 0, "attended": 0}
+            stats_map[sid]['total'] += 1
+            if log.get('is_present'):
+                stats_map[sid]['attended'] += 1
 
-        for i, sub_node in enumerate(subjects):
-            sub = sub_node['subjects']
-            sid = sub['subject_id']
-            stats = stats_map.get(sid, {"total": 0, "attended": 0})
-
-            percentage = (
-                round((stats['attended'] / stats['total']) * 100)
-                if stats['total'] > 0 else 0
-            )
-
-            def unenroll_button(s=sid, sn=sub):
-                if st.button(
-                    "Unenroll from this course",
-                    type='tertiary',
-                    width='stretch',
-                    icon=':material/delete_forever:',
-                    key=f"unenroll_{s}"
-                ):
-                    unenroll_student_from_subject(student_id, s)
-                    st.toast(f'Unenrolled from {sn["name"]} successfully!')
-                    st.rerun()
-
-            with cols[i % 2]:
-                subject_card(
-                    name=sub['name'],
-                    code=sub['subject_code'],
-                    section=sub['section'],
-                    stats=[
-                        ('📋', 'Total Classes', stats['total']),
-                        ('✅', 'Attended', stats['attended']),
-                        ('📊', 'Percentage', f"{percentage}%"),
-                    ],
-                    footer_callback=unenroll_button
+        if subjects:
+            cols = st.columns(2)
+            for i, sub_node in enumerate(subjects):
+                sub        = sub_node['subjects']
+                sid        = sub['subject_id']
+                stats      = stats_map.get(sid, {"total": 0, "attended": 0})
+                percentage = (
+                    round((stats['attended'] / stats['total']) * 100)
+                    if stats['total'] > 0 else 0
                 )
-    else:
-        st.info("You are not enrolled in any subjects yet. Click '+ Enroll in Subject' to get started!")
+
+                def unenroll_button(s=sid, sn=sub):
+                    if st.button(
+                        "Unenroll from this course",
+                        type='tertiary',
+                        width='stretch',
+                        icon=':material/delete_forever:',
+                        key=f"unenroll_{s}"
+                    ):
+                        unenroll_student_from_subject(student_id, s)
+                        st.toast(f'Unenrolled from {sn["name"]} successfully!')
+                        st.rerun()
+
+                with cols[i % 2]:
+                    subject_card(
+                        name=sub['name'],
+                        code=sub['subject_code'],
+                        section=sub['section'],
+                        stats=[
+                            ('📋', 'Total Classes', stats['total']),
+                            ('✅', 'Attended',       stats['attended']),
+                            ('📊', 'Percentage',     f"{percentage}%"),
+                        ],
+                        footer_callback=unenroll_button
+                    )
+        else:
+            st.info("No subjects yet. Click '+ Enroll' to get started!")
+
+    with tab2:
+        chatbot_ui(student_data)
 
     footer_dashboard()
 
@@ -104,43 +176,83 @@ def student_screen():
         return
 
     c1, c2 = st.columns(2, vertical_alignment="center", gap="large")
-
     with c1:
         header_dashboard()
-
     with c2:
         if st.button("← Go Back", type="secondary", key="loginbackbtn"):
+            for key in [
+                'current_challenge', 'liveness_passed',
+                'liveness_image',    'geofence_passed',
+                'student_location'
+            ]:
+                st.session_state.pop(key, None)
             st.session_state["login_type"] = None
             st.rerun()
 
     st.header("Login using FaceID")
     st.write("")
+
+    # ── Step 1: Geo-fence check ───────────────────
+    geofence_ok = st.session_state.get('geofence_passed', False)
+
+    if not geofence_ok:
+        geofence_check_ui()
+        return
+
+    st.success("✅ Location verified — You are inside campus!")
     st.write("")
 
-    photo_source = st.camera_input("Position your face in the camera center")
+    # ── Step 2: Liveness check ────────────────────
+    liveness_passed = st.session_state.get('liveness_passed', False)
 
-    if photo_source:
-        img = np.array(Image.open(photo_source).convert("RGB"), dtype=np.uint8)
-        st.session_state.captured_img = img
+    if not liveness_passed:
+        liveness_check_ui()
+        return
 
-        with st.spinner("AI is scanning"):
+    st.success("✅ Liveness verified!")
+    st.write("")
+
+    # ── Step 3: Face scan ─────────────────────────
+    img = st.session_state.get('liveness_image')
+
+    if img is not None:
+        with st.spinner("AI is scanning your face..."):
             detected, all_ids, num_faces = predict_attendance(img)
 
             if num_faces == 0:
-                st.warning("Face not found")
+                st.warning("Face not found. Please redo liveness check.")
+                for key in ['current_challenge', 'liveness_passed', 'liveness_image']:
+                    st.session_state.pop(key, None)
+                import time
+                time.sleep(2)
+                st.rerun()
+
             elif num_faces > 1:
-                st.warning("More than one face found — please ensure only you are in frame")
+                st.warning("More than one face found.")
+                for key in ['current_challenge', 'liveness_passed', 'liveness_image']:
+                    st.session_state.pop(key, None)
+                import time
+                time.sleep(2)
+                st.rerun()
+
             else:
                 if detected:
-                    student_id = list(detected.keys())[0]
+                    student_id   = list(detected.keys())[0]
                     all_students = get_all_students()
-                    student = next((s for s in all_students if s["student_id"] == student_id), None)
-
+                    student      = next(
+                        (s for s in all_students if s["student_id"] == student_id), None
+                    )
                     if student:
+                        for key in [
+                            'current_challenge', 'liveness_passed',
+                            'liveness_image',    'geofence_passed'
+                        ]:
+                            st.session_state.pop(key, None)
                         st.session_state.is_logged_in = True
-                        st.session_state.user_role = "student"
+                        st.session_state.user_role    = "student"
                         st.session_state.student_data = student
                         st.toast(f"Welcome back, {student['name']}")
+                        import time
                         time.sleep(1)
                         st.rerun()
                     else:
@@ -149,77 +261,5 @@ def student_screen():
                 else:
                     st.info("Face not recognized. You might be a new student.")
                     st.session_state.show_registration = True
-
-    if st.session_state.get("show_registration", False):
-        with st.container(border=True):
-            st.header("Register new profile")
-
-            new_name = st.text_input(
-                "Enter your name",
-                placeholder="e.g. Ankit Kumar",
-                key="reg_name_input"
-            )
-
-            # ✅ Email field
-            new_email = st.text_input(
-                "Enter your email",
-                placeholder="e.g. ankit@gmail.com",
-                key="reg_email_input"
-            )
-
-            # ✅ Phone field (optional)
-            new_phone = st.text_input(
-                "Phone number (optional)",
-                placeholder="e.g. 9876543210",
-                key="reg_phone_input"
-            )
-
-            st.subheader("Optional: voice enrollment")
-            st.info("Enroll your voice for voice-only attendance")
-
-            audio_data = None
-            try:
-                audio_data = st.audio_input("Record your audio, e.g. 'I am present, my name is Akash'")
-            except Exception:
-                st.error("Audio recording failed")
-
-            if st.button("Create Account", type="primary"):
-                if not new_name:
-                    st.warning("Please enter your name")
-                elif not new_email:
-                    st.warning("Please enter your email")
-                elif "@" not in new_email or "." not in new_email:
-                    st.warning("Please enter a valid email address")
-                else:
-                    img = st.session_state.get("captured_img")
-                    if img is None:
-                        st.warning("Please capture a photo first.")
-                    else:
-                        with st.spinner("Creating profile"):
-                            encodings = get_face_embeddings(img)
-                            if encodings:
-                                face_emb = encodings[0].tolist()
-                                voice_emb = None
-                                if audio_data:
-                                    voice_emb = get_voice_embedding(audio_data.getvalue())
-                                response_data = create_student(
-                                    new_name,
-                                    email=new_email,
-                                    phone=new_phone if new_phone else None,
-                                    face_embedding=face_emb,
-                                    voice_embedding=voice_emb
-                                )
-                                if response_data:
-                                    train_classifier()
-                                    st.session_state.is_logged_in = True
-                                    st.session_state.user_role = "student"
-                                    st.session_state.student_data = response_data
-                                    st.session_state.show_registration = False
-                                    st.session_state.captured_img = None
-                                    st.toast(f"Profile created! Hi, {new_name}")
-                                    time.sleep(1)
-                                    st.rerun()
-                            else:
-                                st.error("No face detected in photo. Please try again.")
 
     footer_dashboard()

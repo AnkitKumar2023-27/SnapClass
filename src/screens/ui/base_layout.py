@@ -28,7 +28,7 @@ def style_background_dashboard():
         }
 
         [data-testid="stAppViewContainer"] * {
-            color: black !important;
+            color:black !important;
         }
 
         h1, h2, h3, h4, h5, h6, p, span, div, label {
