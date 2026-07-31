@@ -56,7 +56,7 @@ def liveness_check_ui():
         verify_btn = st.button("✅ Verify Liveness", type="primary",   width="stretch", key="verify_liveness_btn")
 
     with col2:
-        if st.button("🔄 New Challenge",             type="secondary", width="stretch", key="new_challenge_btn"):
+        if st.button("🔄 New Challenge",            type="secondary", width="stretch", key="new_challenge_btn"):
             st.session_state.pop('current_challenge', None)
             st.rerun()
 
@@ -183,7 +183,7 @@ def student_screen():
             for key in [
                 'current_challenge', 'liveness_passed',
                 'liveness_image',    'geofence_passed',
-                'student_location'
+                'student_location',  'show_registration'
             ]:
                 st.session_state.pop(key, None)
             st.session_state["login_type"] = None
@@ -223,7 +223,6 @@ def student_screen():
                 st.warning("Face not found. Please redo liveness check.")
                 for key in ['current_challenge', 'liveness_passed', 'liveness_image']:
                     st.session_state.pop(key, None)
-                import time
                 time.sleep(2)
                 st.rerun()
 
@@ -231,7 +230,6 @@ def student_screen():
                 st.warning("More than one face found.")
                 for key in ['current_challenge', 'liveness_passed', 'liveness_image']:
                     st.session_state.pop(key, None)
-                import time
                 time.sleep(2)
                 st.rerun()
 
@@ -252,7 +250,6 @@ def student_screen():
                         st.session_state.user_role    = "student"
                         st.session_state.student_data = student
                         st.toast(f"Welcome back, {student['name']}")
-                        import time
                         time.sleep(1)
                         st.rerun()
                     else:
@@ -261,5 +258,60 @@ def student_screen():
                 else:
                     st.info("Face not recognized. You might be a new student.")
                     st.session_state.show_registration = True
+
+            if st.session_state.get("show_registration", False):
+                with st.container(border=True):
+                    st.header("Register new profile")
+                    
+                    # Added Email and Phone fields
+                    new_name = st.text_input("Enter your name", placeholder="e.g. Ankit")
+                    new_email = st.text_input("Enter your email (optional)", placeholder="e.g. ankit@example.com")
+                    new_phone = st.text_input("Enter your phone number (optional)", placeholder="e.g. +919876543210")
+                    
+                    st.subheader("Optional: voice enrollment")
+                    st.info("Enroll your voice for voice-only attendance")
+
+                    audio_data = None
+                    try:
+                        audio_data = st.audio_input("Record your audio, e.g. 'I am present, my name is Akash'")
+                    except Exception:
+                        st.error("Audio recording failed")
+
+                    if st.button("Create Account", type="primary"):
+                        if new_name:
+                            register_img = st.session_state.get("liveness_image")
+                            if register_img is None:
+                                st.warning("Please capture a photo first.")
+                            else:
+                                with st.spinner("Creating profile"):
+                                    encodings = get_face_embeddings(register_img)
+                                    if encodings:
+                                        face_emb = encodings[0].tolist()
+                                        voice_emb = None
+                                        if audio_data:
+                                            voice_emb = get_voice_embedding(audio_data.getvalue())
+                                        
+                                        # Now passing email and phone correctly
+                                        response_data = create_student(
+                                            name=new_name,
+                                            email=new_email if new_email else None,
+                                            phone=new_phone if new_phone else None,
+                                            face_embedding=face_emb,
+                                            voice_embedding=voice_emb
+                                        )
+                                        if response_data:
+                                            train_classifier()
+                                            st.session_state.is_logged_in = True
+                                            st.session_state.user_role = "student"
+                                            st.session_state.student_data = response_data
+                                            st.session_state.show_registration = False
+                                            st.session_state.liveness_image = None
+                                            st.toast(f"Profile created! Hi, {new_name}")
+                                            time.sleep(1)
+                                            st.rerun()
+                                    else:
+                                        st.error("No face detected in photo. Please try again.")
+                        else:
+                            st.warning("Please enter your name")
 
     footer_dashboard()

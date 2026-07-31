@@ -1,5 +1,6 @@
 #  this file use to save all the library which is mainly for install 
 #  at a time or  deployment pplatform also serch this file for deploying 
+streamlit
  numpy
  pandas
  scikit-learn

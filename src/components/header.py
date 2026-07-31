@@ -1,6 +1,5 @@
 import streamlit as st
-from textwrap import dedent          # ✅ import added
-
+from textwrap import dedent      
 
 def header_home():
     logo_url = "https://i.ibb.co/YTYGn5qV/logo.png"

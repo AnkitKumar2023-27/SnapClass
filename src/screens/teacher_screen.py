@@ -189,7 +189,7 @@ def teacher_tab_take_attendance():
 
         with c3:
             if st.button('Use Voice Attendance', type='primary', width='stretch', icon=':material/mic:'):
-                voice_attendance_tab(selected_subject_id)    # ✅ correct function name
+                voice_attendance_tab(selected_subject_id)    
     else:
         st.info("No photos added yet. Click 'Add Photos' to begin.")
 
