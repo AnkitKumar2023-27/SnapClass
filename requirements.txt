@@ -23,4 +23,4 @@ opencv-python-headless==4.10.0.84
 streamlit-webrtc
 av
 
-cerebras-cloud-sdk
+cerebras-cloud-sdk0
