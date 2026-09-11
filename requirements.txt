@@ -17,10 +17,10 @@ resemblyzer
 openpyxl
 plotly
 
-mediapipe==0.10.14
+mediapipe==0.10.30
 opencv-python-headless==4.10.0.84
 
 streamlit-webrtc
 av
 
-cerebras-cloud-sdk0
+cerebras-cloud-sdk==1.91.0
